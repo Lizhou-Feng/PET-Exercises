@@ -7,7 +7,7 @@
 # $ py.test -v test_file_name.py
 
 ###########################
-# Group Members: TODO
+# Group Members: Killian Davitt, Lizhou Feng
 ###########################
 
 from petlib.ec import EcGroup
@@ -52,6 +52,10 @@ def proveKey(params, priv, pub):
     (G, g, hs, o) = params
     
     ## YOUR CODE HERE:
+    w = o.random()
+    W = w*g
+    c=to_challenge([g, W]) 
+    r = (w-c*priv)% o
     
     return (c, r)
 
@@ -62,6 +66,7 @@ def verifyKey(params, pub, proof):
     (G, g, hs, o) = params
     c, r = proof
     gw_prime  = c * pub + r * g 
+   
     return to_challenge([g, gw_prime]) == c
 
 #####################################################
@@ -92,7 +97,23 @@ def proveCommitment(params, C, r, secrets):
     x0, x1, x2, x3 = secrets
 
     ## YOUR CODE HERE:
-
+    w0 = o.random()
+    w1 = o.random()
+    w2 = o.random()
+    w3 = o.random()
+    wr = o.random()
+    
+    W = w0*h0+w1*h1+w2*h2+w3*h3+wr*g
+    c = to_challenge([g, h0, h1, h2, h3, W])
+    
+    r0=w0-c*x0
+    r1=w1-c*x1
+    r2=w2-c*x2
+    r3=w3-c*x3
+    rr=wr-c*r
+    
+    responses = (r0,r1,r2,r3,rr)
+    
     return (c, responses)
 
 def verifyCommitments(params, C, proof):
@@ -139,8 +160,10 @@ def verifyDLEquality(params, K, L, proof):
     c, r = proof
 
     ## YOUR CODE HERE:
-
-    return # YOUR RETURN HERE
+    Kw_prime = c*K+r*g
+    Lw_prime = c*L+r*h0
+    
+    return to_challenge([g,h0,Kw_prime,Lw_prime]) == c
 
 #####################################################
 # TASK 4 -- Prove correct encryption and knowledge of 
@@ -155,8 +178,8 @@ def encrypt(params, pub, m):
     return k, (k * g, k * pub + m * h0)
 
 def proveEnc(params, pub, Ciphertext, k, m):
-    """ Prove in ZK that the ciphertext is well formed 
-        and knowledge of the message encrypted as well.
+    """ Prove in ZK that the ciphertext is well formed #jo multiple encryption
+        and knowledge of the message encrypted as well. #jo equality
 
         Return the proof: challenge and the responses.
     """ 
@@ -164,7 +187,17 @@ def proveEnc(params, pub, Ciphertext, k, m):
     a, b = Ciphertext
 
     ## YOUR CODE HERE:
+    w1 = o.random()
+    w2 = o.random()
+    
+    W1 = w1*g
+    W2 = w1*pub+w2*h0
 
+    c = to_challenge([g, h0, pub, W1,W2])
+    
+    rk = w1-c*k
+    rm = w2-c*m
+       
     return (c, (rk, rm))
 
 def verifyEnc(params, pub, Ciphertext, proof):
@@ -174,9 +207,10 @@ def verifyEnc(params, pub, Ciphertext, proof):
     (c, (rk, rm)) = proof
 
     ## YOUR CODE HERE:
-
-    return ## YOUR RETURN HERE
-
+    W1 = c*a+rk*g
+    W2 = c*b+rk*pub+rm*h0
+    
+    return to_challenge([g,h0,pub,W1,W2]) == c
 
 #####################################################
 # TASK 5 -- Prove a linear relation
@@ -199,16 +233,27 @@ def prove_x0eq10x1plus20(params, C, x0, x1, r):
     (G, g, (h0, h1, h2, h3), o) = params
 
     ## YOUR CODE HERE:
-
-    return ## YOUR RETURN HERE
+    
+    w1 = o.random()
+    wr = o.random()
+ 
+    W = w1*h1+w1*10*h0+wr*g
+    c = to_challenge([g, h1, h0, W])
+     
+    r1 = w1-c*x1
+    rr = wr-c*r
+   
+    return (c, (r1,rr))
 
 def verify_x0eq10x1plus20(params, C, proof):
     """ Verify that proof of knowledge of C and x0 = 10 x1 + 20. """
     (G, g, (h0, h1, h2, h3), o) = params
 
     ## YOUR CODE HERE:
-
-    return ## YOUR RETURN HERE
+    c,(r1,rr)=proof 
+    W = r1*h1+r1*10*h0+rr*g+c*(C-20*h0)
+    
+    return  c == to_challenge([g, h1, h0, W])
 
 #####################################################
 # TASK 6 -- (OPTIONAL) Prove that a ciphertext is either 0 or 1
@@ -253,7 +298,60 @@ def test_bin_incorrect():
 # that  deviates from the Schnorr identification protocol? Justify 
 # your answer by describing what a dishonest verifier may do.
 
-""" TODO: Your answer here. """
+""" TODO: Your answer here.
+
+Plausible deniability does not hold for verifiers that deviate from the
+protocol.
+The most important factor to consider is the random challenge being
+issued. 
+
+The reason plausible deniability holds for honest verifiers, is that
+when a transcript of the protocol is presented to a 3rd party, it is
+entirely possible that the transcript was forged by the verifier. 
+
+A valid transcript of the protocol could be forged by:
+
+1. selecting a random r
+2. selecting a random c
+
+and then,
+
+3. Computing a W from c and r,
+    W = g^r . pub^c
+    
+if this is done, any verifier will consider the forged transcript
+valid. However, since it is known that forgeries are possible, no
+third party will believe that this transcript proves anything.
+
+So, with honest verifiers, The Prover can prove to the verifier that
+they posses the discrete log secret to a given public key. however,
+the verifier then has no ability to prove this to a 3rd party. The
+verifier cannot convince a 3rd party that Bob proved this. 
+
+with a dishonest verifier, this can change. All that is necessary is
+for the verifier to not produce a random challenge, but instead to
+produce a challenge that is dependant on the value of W that the
+prover sends initially. If the value of c is dependant on W. Then, it
+is far more difficult for a verifier to forge transcripts. Since the
+order of steps in forging transcripts requires that c is computed
+before w, if c is dependant on w, it negates the possiblity of forged
+transcripts.
+
+to be more specific, imagine that the prover sends the initial W to
+the verifier. The verifier then computes the challenge as c = H(W)
+where H is a collision resistant hash function. The verifier sends
+this challenge back to the prover and the protocol completes.
+
+As usual, the verifier has a transcript of this protocol, but this
+time, they can convince any 3rd party fully, that Bob did in fact
+prove his knowledge of the discrete log secret. A 3rd party can check
+that c is indeed the hashed value of W, which means it could not have
+been forged. 
+
+Therefore, if a verifier is dishonest, it can mean that plausible
+deniability of the schnorr identification protocol does not hold. 
+
+"""
 
 #####################################################
 # TASK Q2 - Answer the following question:
@@ -266,7 +364,24 @@ def test_bin_incorrect():
 #
 # Hint: Look at "test_prove_something" too.
 
-""" TODO: Your answer here. """
+""" TODO: Your answer here. 
+
+The function proves that the prover knows one of the values, either x
+or y. With the values c1 and c2, the verifier checks if c1 + c2 =
+C. When the verifier checks this, they know that both c1 and c2 are
+correct. Normally this would prove the the prover knew both x and y,
+but... since c1 + c2 = C. It is also true that if the prover knew one
+of either x or y, they could construct the valid value for c1, and
+then set c2 to be C-c1. and vice versa. So, this function proves that
+the prover either knows at least one of x,y. 
+
+Indeed, we can see in the proving function that the only reason that
+the prover can produce a valid c2 is by substracting c1 from c. But
+this does not reveal to the verifier whether the prover produced c1
+from a secret and subtracted to find c2, or whether the prover
+produced c2 from a secret and subtracted to find c1.
+
+"""
 
 def prove_something(params, KX, KY, y):
     (G, g, _, o) = params
