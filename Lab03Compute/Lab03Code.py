@@ -13,7 +13,7 @@
 #
 
 ###########################
-# Group Members: TODO
+# Group Members: Kam Leung Felix Chiu and Lizhou Feng 
 ###########################
 
 
@@ -30,9 +30,13 @@ def setup():
 def keyGen(params):
    """ Generate a private / public key pair """
    (G, g, h, o) = params
-   
-   # ADD CODE HERE
+  
+   priv = 0
+   while priv == 0:
+       priv = o.random()
 
+   pub = priv*g 
+ 
    return (priv, pub)
 
 def encrypt(params, pub, m):
@@ -40,7 +44,12 @@ def encrypt(params, pub, m):
     if not -100 < m < 100:
         raise Exception("Message value to low or high.")
 
-   # ADD CODE HERE
+    (G, g, h, o) = params
+
+    k = o.random()
+    first = k*g
+    second = k*pub + m*h
+    c = (first, second)
 
     return c
 
@@ -75,7 +84,7 @@ def decrypt(params, priv, ciphertext):
     assert isCiphertext(params, ciphertext)
     a , b = ciphertext
 
-   # ADD CODE HERE
+    hm = b + a.pt_mul(priv.int_neg())
 
     return logh(params, hm)
 
@@ -91,7 +100,9 @@ def add(params, pub, c1, c2):
     assert isCiphertext(params, c1)
     assert isCiphertext(params, c2)
 
-   # ADD CODE HERE
+    (a1,b1) = c1
+    (a2,b2) = c2
+    c3 = (a1+a2, b1+b2)
 
     return c3
 
@@ -100,7 +111,8 @@ def mul(params, pub, c1, alpha):
         product of the plaintext time alpha """
     assert isCiphertext(params, c1)
 
-   # ADD CODE HERE
+    (a,b) = c1
+    c3 = (a.pt_mul(alpha), b.pt_mul(alpha))
 
     return c3
 
@@ -113,7 +125,7 @@ def groupKey(params, pubKeys=[]):
     """ Generate a group public key from a list of public keys """
     (G, g, h, o) = params
 
-   # ADD CODE HERE
+    pub = G.sum(pubKeys)
 
     return pub
 
@@ -121,8 +133,11 @@ def partialDecrypt(params, priv, ciphertext, final=False):
     """ Given a ciphertext and a private key, perform partial decryption. 
         If final is True, then return the plaintext. """
     assert isCiphertext(params, ciphertext)
-    
-    # ADD CODE HERE
+
+    (a,b) = ciphertext
+    a1 = a
+    a = a.pt_mul(priv.int_neg())
+    b1 = b+a 
 
     if final:
         return logh(params, b1)
@@ -142,7 +157,8 @@ def corruptPubKey(params, priv, OtherPubKeys=[]):
         corrupt authority. """
     (G, g, h, o) = params
     
-   # ADD CODE HERE
+    summ = G.sum(OtherPubKeys)
+    pub = priv*g - summ
 
     return pub
 
@@ -157,7 +173,12 @@ def encode_vote(params, pub, vote):
         zero and the votes for one."""
     assert vote in [0, 1]
 
-   # ADD CODE HERE
+    if vote == 0:
+        v0 = encrypt(params, pub, 1)
+        v1 = encrypt(params, pub, 0) 
+    else:
+        v0 = encrypt(params, pub, 0)
+        v1 = encrypt(params, pub, 1) 
 
     return (v0, v1)
 
@@ -166,7 +187,15 @@ def process_votes(params, pub, encrypted_votes):
         to sum votes for zeros and votes for ones. """
     assert isinstance(encrypted_votes, list)
     
-   # ADD CODE HERE
+    v0CipherSum = encrypted_votes[0][0]
+    v1CipherSum = encrypted_votes[0][1]
+    for enc_vote in encrypted_votes[1:]:
+        (v0,v1) = enc_vote
+        v0CipherSum = add(params, pub, v0CipherSum, v0)
+        v1CipherSum = add(params, pub, v1CipherSum, v1)
+
+    tv0 = v0CipherSum
+    tv1 = v1CipherSum
 
     return tv0, tv1
 
@@ -217,7 +246,9 @@ def simulate_poll(votes):
 # What is the advantage of the adversary in guessing b given your implementation of 
 # Homomorphic addition? What are the security implications of this?
 
-""" Your Answer here """
+"""
+If the adversary has access to a decryption oracle (e.g. in CCA), they can find the value of b. First they take the negative of Cb (using pt_neg()) and add the negative with C. Now the sum (or difference) would be passed through the decryption oracle to get either a value of Pa or Pc. Then they can find the value of Pa by simply encrypting a known value, add Ca to the encrypted value, and pass it through the decryption oracle again. This would then tell the adversary the value of Pa. So if Pa is equal to the value calculated in the first summation, then b=0 and if not, b=1. This means that our implementation is not secure against adaptive chosen-ciphertext attacks.
+"""
 
 ###########################################################
 # TASK Q2 -- Answer questions regarding your implementation
@@ -228,4 +259,12 @@ def simulate_poll(votes):
 # that it yields an arbitrary result. Can those malicious actions 
 # be detected given your implementation?
 
-""" Your Answer here """
+"""
+(a) The malicious user can contruct a negative number for each choice equal to the total number of votes they expect for that choice and encrypt that number. For example, let there be a poll on user's favourite colour with the choices red and blue. The malicious user can guess how many voted for each choice, and then encrypt a negative number for that choice so the result would be zero. 
+  If they are not confident with their guesses, they can randomly encrypt a large negative number. Consequently, in the summation, the number of votes for each choice would be negative. 
+  Therefore, these two situations would yield no result.
+
+(b) Similar to (a), the user can encrypt a large negative number for all the other vote choice other than the one they want. Since the user can essentially control how many votes they want to add or take away from each choice, they can choose the result they want.
+
+Our implementation cannot detect these actions since we do not validate the input of the user. In our implementation, we have no way of telling what the user encrypted.
+"""
