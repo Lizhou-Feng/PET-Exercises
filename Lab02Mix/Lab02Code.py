@@ -11,9 +11,9 @@
 #           and also pytest. Ensure the Lab Code can 
 #           be imported.
 
-###########################
-# Group Members: TODO
-###########################
+##############################################
+# Group Members: Alexios Nikas - Lizhou Feng #
+##############################################
 
 
 from collections import namedtuple
@@ -132,7 +132,26 @@ def mix_client_one_hop(public_key, address, message):
     private_key = G.order().random()
     client_public_key  = private_key * G.generator()
 
-    ## ADD CODE HERE
+    # Compute the shared key
+    shared_key = public_key.pt_mul(private_key)
+    K = sha512(shared_key.export()).digest() # Securely Hash the key into a short digest.
+
+    # Use different parts of the shared key for different operations
+    hmac_key = K[:16]
+    address_key = K[16:32]
+    message_key = K[32:48]
+    iv = b"\x00"*16 # iv = 0x00000000000000000000000000000000
+
+    # Encrypt using AES Counter mode
+    address_cipher = aes_ctr_enc_dec(address_key, iv, address_plaintext)
+    message_cipher = aes_ctr_enc_dec(message_key, iv, message_plaintext)
+
+    # HMAC
+    h = Hmac(b"sha512", hmac_key)        
+    h.update(address_cipher)
+    h.update(message_cipher)
+    expected_mac = h.digest()
+    expected_mac = expected_mac[:20]
 
     return OneHopMixMessage(client_public_key, expected_mac, address_cipher, message_cipher)
 
@@ -253,16 +272,62 @@ def mix_client_n_hop(public_keys, address, message):
     assert isinstance(message, bytes) and len(message) <= 1000
 
     # Encode the address and message
-    # use those encoded values as the payload you encrypt!
+    # Use those encoded values as the payload you encrypt!
     address_plaintext = pack("!H256s", len(address), address)
     message_plaintext = pack("!H1000s", len(message), message)
 
     ## Generate a fresh public key
     private_key = G.order().random()
     client_public_key  = private_key * G.generator()
+    
+    aes = Cipher("AES-128-CTR")
+    hmacs=[]
+    shared_key_material=[]
+    
+    for publickey in public_keys:
+       ## Generate the shared key
+       shared_element = private_key * publickey
+       key_material = sha512(shared_element.export()).digest()
+       shared_key_material+=[key_material]
+       
+       # Extract a blinding factor for the private key, 
+       # such that synchronize the private key with the public key of the client
+       blinding_factor = Bn.from_binary(key_material[48:])
+       private_key= private_key.int_mul(blinding_factor)
+       
+    for key_material in reversed(shared_key_material):
 
-    ## ADD CODE HERE
-
+       # Use different parts of the shared key for different operations
+       hmac_key = key_material[:16]
+       address_key = key_material[16:32]
+       message_key = key_material[32:48]
+     
+       ## Encrypt the address & message
+       iv = b"\x00"*16
+       address_cipher = aes_ctr_enc_dec(address_key, iv, address_plaintext)
+       message_cipher = aes_ctr_enc_dec(message_key, iv, message_plaintext)
+        
+       address_plaintext = address_cipher
+       message_plaintext = message_cipher
+      
+      
+       ## Generate the hmac
+       h = Hmac(b"sha512", hmac_key) 
+       for i,other_mac in enumerate(hmacs):
+          iv = pack("H14s", i, b"\x00"*14)
+          hmac_ciphertext = aes_ctr_enc_dec(hmac_key, iv, other_mac)
+          hmacs[i]=hmac_ciphertext
+          
+          h.update(hmac_ciphertext)
+          
+       h.update(address_cipher)
+       h.update(message_cipher)
+       expected_mac = h.digest()
+       expected_mac = expected_mac[:20]
+       
+       hmacs.insert(0,expected_mac)
+       
+   
     return NHopMixMessage(client_public_key, hmacs, address_cipher, message_cipher)
 
 
@@ -311,19 +376,94 @@ def analyze_trace(trace, target_number_of_friends, target=0):
     friends of the target.
     """
 
-    ## ADD CODE HERE
+    """ Method 1, without using Counter """
 
-    return []
+
+    # # Initialization of lists that we're going to use
+    # counter_Alice = 100 * [0]
+    # counter_others = 100 * [0]
+    # delta = 100 * [0]
+    # positions = target_number_of_friends * [0]
+
+    # # Count
+    # for i in range(0,1000):
+    #     if trace[i][0][0] == 0:
+    #         for j in range(0,10):
+    #             counter_Alice[trace[i][1][j]] += 1
+    #     else:
+    #         for k in range(0,10):
+    #             counter_others[trace[i][1][k]] += 1
+
+    # # Compute delta between receivers
+    # for i in range (0,100):
+    #     delta[i] = counter_Alice[i] - counter_others[i]
+
+    # # Final result
+    # for a in range(0,target_number_of_friends):
+    #     positions[a] = delta.index(max(delta))
+    #     delta[delta.index(max(delta))] = 0
+
+    # return positions
+
+
+    """ Method 2,  using Counter """
+    
+    possible_target_friends=[]
+    targets_friends =[]
+    
+    for i in range(len(trace)):
+      if 0 in trace[i][0]:
+    #select the traces where Alice is sending, and store the  corresponding receivers in the possible_target_friends.
+        possible_target_friends += trace[i][1]
+
+    #convert the possible_target_friends to Counter type, and use .most_common() to get the most frequent receivers with the number of Alice's friends
+    possible_target_friends = Counter(possible_target_friends)
+    targets = possible_target_friends.most_common(target_number_of_friends)
+    
+    #targets = [(friend 1, frequence1),(friend 2, frequence2),...,] so only selecting the 'friend identifier' to store.
+    for i in range(target_number_of_friends):
+       targets_friends.append(targets[i][0]) 
+         
+    return targets_friends
 
 ## TASK Q1 (Question 1): The mix packet format you worked on uses AES-CTR with an IV set to all zeros. 
 #                        Explain whether this is a security concern and justify your answer.
 
-""" TODO: Your answer HERE """
+
+"""
+There is no security concern when we are using AES-CTR mode with IV = 0.
+
+IV in AES-CTR mode is used to conduct random encryptions under the same key,
+and therefore the ciphertexts can be different when encrypting the same
+plaintext multiple times. 
+
+However, in our case the key used in AES-CTR mode is generated every single
+time, based on the Diffie-Hellman key exchange. This means that the key used in
+each encryption will be different and attackers cannot recover it. Because of
+this, attackers cannot look up and modify the message, and therefore
+confidentiality and integrity are preserved. 
+More importantly, when the same message is encrypted multiple times, the
+ciphertext will be different. Thus, even without random IV there is no
+information leakage. 
+
+Consequently, with the fixed IV, there is no security concern.
+"""
 
 
 ## TASK Q2 (Question 2): What assumptions does your implementation of the Statistical Disclosure Attack 
 #                        makes about the distribution of traffic from non-target senders to receivers? Is
 #                        the correctness of the result returned dependent on this background distribution?
 
-""" TODO: Your answer HERE """
+""" 
+The initial assumption is that when Alice does not send any messages, the
+traffic follows uniform distribution where non-target senders send to any
+receivers with equal probability. Therefore when Alice(target) sends her own
+messages, the distribution is not uniform anymore.This is because she sends
+messages to her friends, who therefore will appear more often. 
 
+Thus, the correctness of the result returned is dependent on how the
+distribution approaches uniformity, without target sender. The more the
+distribution without target sender diverges from uniformity, the difference
+between that and the distribution with the target sender will be smaller, such
+that our results become less correct. 
+"""
