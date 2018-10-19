@@ -8,7 +8,7 @@
 # $ py.test-2.7 -v Lab01Tests.py 
 
 ###########################
-# Group Members: TODO
+# Group Members: Maxine Emuobosa, Lizhou Feng
 ###########################
 
 
@@ -36,15 +36,28 @@ def encrypt_message(K, message):
     plaintext = message.encode("utf8")
     
     ## YOUR CODE HERE
+    aes = Cipher.aes_128_gcm()
+    iv = urandom(16)
+    enc=aes.enc(K,iv)
+    ciphertext = enc.update(plaintext)
+    ciphertext += enc.finalize()
+    tag=enc.get_tag(16)
+    
 
     return (iv, ciphertext, tag)
 
 def decrypt_message(K, iv, ciphertext, tag):
     """ Decrypt a cipher text under a key K 
 
-        In case the decryption fails, throw an exception.
+        In case the decryption fails, throw an exception.##
     """
     ## YOUR CODE HERE
+    aes = Cipher.aes_128_gcm()
+    dec=aes.dec(K,iv)
+    plain = dec.update(ciphertext)
+    dec.set_tag(tag)
+    nothing = dec.finalize()
+    
 
     return plain.encode("utf8")
 
@@ -91,7 +104,7 @@ def is_point_on_curve(a, b, p, x, y):
 def point_add(a, b, p, x0, y0, x1, y1):
     """Define the "addition" operation for 2 EC Points.
 
-    Reminder: (xr, yr) = (xq, yq) + (xp, yp)
+    Reminder: (xr, yr) = (xq, yq) + (xp, yp) 
     is defined as:
         lam = (yq - yp) * (xq - xp)^-1 (mod p)
         xr  = lam^2 - xp - xq (mod p)
@@ -99,12 +112,22 @@ def point_add(a, b, p, x0, y0, x1, y1):
 
     Return the point resulting from the addition. Raises an Exception if the points are equal.
     """
-
-    # ADD YOUR CODE BELOW
     xr, yr = None, None
-    
-    return (xr, yr)
-
+    # ADD YOUR CODE BELOW
+    if x0==None and y0==None:
+        return x1,y1
+    elif x1==None and y1==None:
+        return x0,y0
+    elif x0==x1 and y0==y1:
+        raise Exception('EC Points must not be equal')
+    elif x0==x1:
+        return  xr,yr
+    else:
+        lam = ((y0 - y1) * (x0 - x1).mod_inverse(p)) %p
+        xr = (lam*lam - x1 -x0).mod(p)
+        yr = (lam * (x1 - xr) - y1 ).mod(p)
+        return (xr, yr)
+ 
 def point_double(a, b, p, x, y):
     """Define "doubling" an EC point.
      A special case, when a point needs to be added to itself.
@@ -118,8 +141,13 @@ def point_double(a, b, p, x, y):
     """  
 
     # ADD YOUR CODE BELOW
-    xr, yr = None, None
 
+    xr, yr = None, None
+    if x==None and y==None:
+       return xr,yr
+    lam = ((Bn(3)*x*x+a)*(Bn(2)*y).mod_inverse(p)).mod(p)
+    xr = (lam*lam-Bn(2)*x).mod(p)
+    yr = (lam*(x-xr)-y).mod(p)
     return xr, yr
 
 def point_scalar_multiplication_double_and_add(a, b, p, x, y, scalar):
@@ -138,10 +166,13 @@ def point_scalar_multiplication_double_and_add(a, b, p, x, y, scalar):
     """
     Q = (None, None)
     P = (x, y)
-
+    
     for i in range(scalar.num_bits()):
-        pass ## ADD YOUR CODE HERE
-
+        ## ADD YOUR CODE HERE
+        if (scalar.is_bit_set(i)):
+           Q=point_add(a,b,p,Q[0],Q[1],P[0],P[1])
+        P=point_double(a,b,p,P[0],P[1])
+        
     return Q
 
 def point_scalar_multiplication_montgomerry_ladder(a, b, p, x, y, scalar):
@@ -164,9 +195,16 @@ def point_scalar_multiplication_montgomerry_ladder(a, b, p, x, y, scalar):
     """
     R0 = (None, None)
     R1 = (x, y)
-
+    
     for i in reversed(range(0,scalar.num_bits())):
-        pass ## ADD YOUR CODE HERE
+        ## ADD YOUR CODE HERE
+        
+        if (not scalar.is_bit_set(i)):
+            R1 = point_add(a,b,p,R0[0],R0[1],R1[0],R1[1])
+            R0 = point_double(a,b,p,R0[0],R0[1])
+        else:
+            R0 = point_add(a,b,p,R0[0],R0[1],R1[0],R1[1])
+            R1 = point_double(a,b,p,R1[0],R1[1])
 
     return R0
 
@@ -195,9 +233,10 @@ def ecdsa_key_gen():
 def ecdsa_sign(G, priv_sign, message):
     """ Sign the SHA256 digest of the message using ECDSA and return a signature """
     plaintext =  message.encode("utf8")
-
     ## YOUR CODE HERE
-
+    digest = sha256(plaintext).digest()
+    sig = do_ecdsa_sign(G,priv_sign,digest)
+    
     return sig
 
 def ecdsa_verify(G, pub_verify, message, sig):
@@ -205,7 +244,8 @@ def ecdsa_verify(G, pub_verify, message, sig):
     plaintext =  message.encode("utf8")
 
     ## YOUR CODE HERE
-
+    digest = sha256(plaintext).digest()
+    res=do_ecdsa_verify(G,pub_verify,sig,digest)
     return res
 
 #####################################################
@@ -215,11 +255,10 @@ def ecdsa_verify(G, pub_verify, message, sig):
 #           - Use Bob's private key to decrypt the message.
 #
 # NOTE: 
-
 def dh_get_key():
     """ Generate a DH key pair """
-    G = EcGroup()
-    priv_dec = G.order().random()
+    G = EcGroup() ##generate a group G
+    priv_dec = G.order().random() ##
     pub_enc = priv_dec * G.generator()
     return (G, priv_dec, pub_enc)
 
@@ -232,17 +271,60 @@ def dh_encrypt(pub, message, aliceSig = None):
         - Use the shared key to AES_GCM encrypt the message.
         - Optionally: sign the message with Alice's key.
     """
-    
+   
     ## YOUR CODE HERE
-    pass
+  
+    G, priv_A, pub_A=dh_get_key()
+    
+    ##caculate the shared key
+    shared_key = priv_A * pub 
+    byte_string = shared_key.export()
+    byte_string_digest = sha256(byte_string).digest()
+    byte_string_digest_16 =  byte_string_digest[:16]
+    
+    ##Encrypt the message
+    plaintext = message.encode("utf8") 
+    iv, ciphertext, tag=encrypt_message(byte_string_digest_16, plaintext)
+    
+    ##sign the message
+    Alice_sig = ecdsa_sign(G, priv_A, message)
+    
+    Encryption_result=(iv, ciphertext, tag, pub_A)
+    Alice_Ver = (Alice_sig, G, message)
+    return Encryption_result,Alice_Ver
+    
 
-def dh_decrypt(priv, ciphertext, aliceVer = None):
+        ## pass
+
+def dh_decrypt(priv,ciphertext, aliceVer):
     """ Decrypt a received message encrypted using your public key, 
     of which the private key is provided. Optionally verify 
     the message came from Alice using her verification key."""
     
     ## YOUR CODE HERE
-    pass
+    priv_B=priv
+    (iv,ciphtext,tag,pub_A) = ciphertext
+   
+    ##caculate the shared key
+    shared_key = priv_B * pub_A
+    byte_string =  shared_key.export()
+    byte_string_digest = sha256(byte_string).digest()
+    byte_string_digest_16 =  byte_string_digest[:16]
+    
+    ##decrypt the message
+    try:
+       m=decrypt_message(byte_string_digest_16, iv, ciphtext, tag)
+    except:
+       raise Exception('decryption failed')
+       
+    ##verify the signature
+    (Alice_sig,G,message) = aliceVer
+
+    veri = ecdsa_verify(G, pub_A, message, Alice_sig)
+    if veri == 0:
+       raise Exception('decryption failed')
+       
+    return m,veri
 
 ## NOTE: populate those (or more) tests
 #  ensure they run using the "py.test filename" command.
@@ -250,14 +332,89 @@ def dh_decrypt(priv, ciphertext, aliceVer = None):
 #  $ py.test-2.7 --cov-report html --cov Lab01Code Lab01Code.py 
 
 def test_encrypt():
-    assert False
+      
+    message = u"Hello World!"
+    (G, priv_B, pub_B)=dh_get_key()
+    ciphertext,aliceVer = dh_encrypt(pub_B, message, aliceSig = None)
+    
+    (iv,ciptext,tag,pub_A)= ciphertext 
+
+    assert len(iv) == 16
+    assert len(ciptext) == len(message)
+    assert len(tag) == 16
+
 
 def test_decrypt():
-    assert False
+    message = u"Hello World!"
+    (G, priv_B, pub_B)=dh_get_key()
+    ciphertext,aliceVer= dh_encrypt(pub_B, message, aliceSig = None)
+    
+    (iv,ciptext,tag,pub_A)= ciphertext 
+
+    assert len(iv) == 16
+    assert len(ciptext) == len(message)
+    assert len(tag) == 16
+    
+    m = dh_decrypt(priv_B, ciphertext, aliceVer)
+    (message_decrypted,result_verify)  = m
+   
+    assert message_decrypted==message
+    assert result_verify 
 
 def test_fails():
-    assert False
+    from pytest import raises
+    from os import urandom
+    
+    message = u"Hello World!"
+    (G, priv_B, pub_B)=dh_get_key()
+    ciphertext,aliceVer = dh_encrypt(pub_B, message, aliceSig = None)
+   
+    (iv,ciptext,tag, pub_A)  = ciphertext
+    (Alice_sig ,G_A,  message)= aliceVer
 
+ 
+    #dh_decrypt(priv,ciphertext, aliceVer)
+    ciphertext = (urandom(len(iv)),ciptext,tag,pub_A)
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_B,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+   
+    ciphertext = (iv,urandom(len(ciptext)),tag,pub_A)
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_B,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    ciphertext = (iv,ciptext,urandom(len(tag)),pub_A)
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_B,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    G_fail, priv_fail, pub_fail = dh_get_key()
+    ciphertext = (iv,ciptext,urandom(len(tag)),pub_fail)
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_B,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_fail,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    aliceVer=(Alice_sig,G_fail,message)
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_fail,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    aliceVer=(urandom(len(Alice_sig)),G_A,message)
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_fail,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    aliceVer=(Alice_sig,G_A,urandom(len(message)))
+    with raises(Exception) as excinfo:
+       dh_decrypt(priv_fail,ciphertext, aliceVer)
+    assert 'decryption failed' in str(excinfo.value)
+    
+    
 #####################################################
 # TASK 6 -- Time EC scalar multiplication
 #             Open Task.
